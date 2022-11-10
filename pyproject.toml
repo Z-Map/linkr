@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "linkr"
+version = "0.1.0"
+description = "Url shortener app"
+authors = ["LOUBIERE Quentin <map@synidion.fr>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = "^0.86.0"
+
+[tool.poetry.dev-dependencies]
+uvicorn = "^0.19.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

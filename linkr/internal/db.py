@@ -20,20 +20,19 @@ def init_db():
     """Init db tables"""
     cur = DB_CON.cursor()
     cur.execute("""CREATE TABLE if not exists UsersData (
-        id INT PRIMARY KEY NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(100),
         email VARCHAR(255),
         pwd_salt VARCHAR(512),
         pwd_hash VARCHAR(512)
     )""")
     cur.execute("""CREATE TABLE if not exists UrlData (
-        id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         url_key VARCHAR(16),
         target VARCHAR(512),
         user_id INT,
         expiration DATETIME
     )""")
-
 
 def convert_db_user_to_model(user: tp.Dict[str, tp.Any]):
     """Do the necessary name conversion to values from db and return a model"""
@@ -77,16 +76,46 @@ def get_users() -> tp.Tuple[User]:
     q = cur.execute(f"SELECT * FROM UsersData")
     return tuple(convert_db_user_to_model(values) for values in cur.fetchall())
 
+def add_user(
+    email: str,
+    name: tp.Optional[str] = None,
+    passwd: tp.Optional[str] = None,
+) -> User:
+    """Add a new user"""
+    cur = DB_CON.cursor()
+    cur.execute("SELECT * FROM UsersData WHERE email = ?", (email,))
+    if cur.fetchone() is not None:
+        raise ValueError("Email already registered")
+    cur.execute(
+        "INSERT INTO UsersData(email,name) VALUES(?, ?) RETURNING *",
+        (email, name)
+    )
+    values = cur.fetchone()
+    if values is None:
+        raise RuntimeError("Fail to add new user")
+    return convert_db_user_to_model(values)
+
 def convert_db_url_to_model(data: tp.Dict[str, tp.Any]):
     """Do the necessary name conversion to values from db and return a model"""
     data['url_id'] = data.pop('id')
     return ShortUrl(**data)
 
-def get_url_metadata(key: str):
+def get_url_metadata(key: str) -> ShortUrl:
     """Get a specific url metadata"""
-    
     cur = DB_CON.cursor()
-    cur.execute(f"SELECT * FROM UrlData WHERE url_key = ?", (key,))
+    cur.execute("SELECT * FROM UrlData WHERE url_key = ?", (key,))
     values = cur.fetchone()
     if values is None:
         raise KeyError(f"No url for key '{key}'")
+    return convert_db_url_to_model(values)
+
+def get_available_key() -> tp.Optional[ShortUrl]:
+    """Get an available key from db"""
+    cur = DB_CON.cursor()
+    cur.execute("SELECT * FROM UrlData WHERE expiration < NOW() OR target = ''")
+    values = cur.fetchone()
+    if values is not None:
+        values = convert_db_url_to_model(values)
+    return values
+
+def 

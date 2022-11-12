@@ -1,121 +1,174 @@
+import asyncio
+import re
 import sqlite3
 import typing as tp
-import re
+
+import aiosqlite
 
 from linkr.internal.schemas import User, ShortUrl
 
 # Connection should be a bit more managed than that for a prod service
-DB_CON = sqlite3.connect("internal.db")
+DB_NAME = "internal.db"
 
-# Copy/pasted from python doc's example
+URL_KEY_PATTERN = re.compile(r"[A-z0-9]+\.[A-z0-9]{2,}-[A-z0-9]+")
+
 def dict_factory(cursor, row):
-    """Return query resul as dict"""
     col_names = [col[0] for col in cursor.description]
     return {key: value for key, value in zip(col_names, row)}
 
-DB_CON.row_factory = dict_factory
+class MasterDatabase():
+    _db_instance = None
+
+    def __new__(class_, *args, **kwargs):
+        if not isinstance(class_._db_instance, class_):
+            class_._db_instance = object.__new__(class_, *args, **kwargs)
+        return class_._db_instance
+
+    def __init__(self):
+        self.db_name = DB_NAME
+        self.con = None
+
+    def __del__(self):
+        asyncio.run(self.close())
+        MasterDatabase._db_instance = None
+
+    async def connection(self):
+        """Returns current db connection"""
+        if self.con is None:
+            self.con = await aiosqlite.connect(self.db_name)
+            self.con.row_factory = dict_factory
+        return self.con
+
+    async def close(self):
+        """Close the connection"""
+        if self.con is not None:
+            await self.con.close()
+        self.con = None
+
+    # User related method
+    def convert_db_user_to_model(self, user: tp.Dict[str, tp.Any]):
+        """Do the necessary name conversion to values from db and return a model"""
+        user['uid'] = user.pop('id')
+        return User(**user)
+
+    async def get_user(self,
+        name: tp.Optional[str] = None,
+        email: tp.Optional[str] = None,
+        uid: tp.Optional[int] = None
+        ) -> User:
+        """Get a specific user from db"""
+        db = await self.connection()
+        data = None
+        target_attr = None
+        error_msg = "No user name, email or id was provided"
+        if name is not None:
+            target_attr = "name"
+            data = name
+            error_msg = f"No user named '{name}'"
+        elif email is not None:
+            target_attr = "email"
+            data = email
+            error_msg = f"No user registered with email '{email}'"
+        elif uid is not None:
+            target_attr = "id"
+            data = uid
+            error_msg = f"No user with uid {uid}"
+        else:
+            raise ValueError(error_msg)
+        async with db.execute(
+            f"SELECT * FROM UsersData WHERE {target_attr} = ?", (data,)
+        ) as cur:
+            values = await cur.fetchone()
+        if values is None:
+            return ValueError(error_msg)
+        return self.convert_db_user_to_model(values)
+
+    # This should be paginated for a prod service
+    async def get_users(self) -> tp.Tuple[User]:
+        """Get all users from db"""
+        db = await self.connection()
+        async with db.execute(f"SELECT * FROM UsersData") as cur:
+            rows = await cur.fetchall()
+        return tuple(self.convert_db_user_to_model(values) for values in rows)
+
+    async def add_user(self,
+        email: str,
+        name: tp.Optional[str] = None,
+        passwd: tp.Optional[str] = None,
+    ) -> User:
+        """Add a new user"""
+        db = await self.connection()
+        async with await db.execute(
+            "SELECT * FROM UsersData WHERE email = ?", (email,)) as cur:
+            if await cur.fetchone():
+                raise ValueError("Email already registered")
+        async with await db.execute(
+            "INSERT INTO UsersData(email,name) VALUES(?, ?) RETURNING *",
+            (email, name)) as cur:
+            values = await cur.fetchone()
+        if values is None:
+            raise RuntimeError("Fail to add new user")
+        return self.convert_db_user_to_model(values)
+
+    # Url related method
+    def convert_db_url_to_model(self, data: tp.Dict[str, tp.Any]):
+        """Do the necessary name conversion to values from db and return a model"""
+        data['url_id'] = data.pop('id')
+        return ShortUrl(**data)
+
+    async def get_url_metadata(self, key: str, domain: str) -> ShortUrl:
+        """Get a specific url metadata"""
+        db = await self.connection()
+        async with db.execute(
+            "SELECT * FROM UrlData WHERE url_key = ? AND url_domain = ?",
+            (key, domain)
+        ) as cur:
+            values = await cur.fetchone()
+            if values is None:
+                raise KeyError(f"No url for key '{key}'")
+        return self.convert_db_url_to_model(values)
+
+    async def get_available_key(self) -> tp.Optional[ShortUrl]:
+        """Get an available key from db"""
+        db = await self.connection()
+        async with db.execute(
+            "SELECT * FROM UrlData WHERE expiration < NOW() OR target = ''"
+        ) as cur:
+            values = await cur.fetchone()
+            if values is not None:
+                values = self.convert_db_url_to_model(values)
+        return values
+
+    async def get_urls(self) -> tp.List[ShortUrl]:
+        """Get a list of used url's metadata"""
+        db = await self.connection()
+        async with db.execute(
+            "SELECT * FROM UrlData WHERE target != ''"
+        ) as cur:
+            return [
+                self.convert_db_url_to_model(values)
+                for values in await cur.fetchall()
+            ]
 
 # This should be ran outside of this module, during deployement.
-def init_db():
+def init_db(name: str):
     """Init db tables"""
-    cur = DB_CON.cursor()
-    cur.execute("""CREATE TABLE if not exists UsersData (
+    con = sqlite3.connect(name)
+    cur = con.cursor()
+    cur.executescript("""CREATE TABLE if not exists UsersData (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(100),
         email VARCHAR(255),
         pwd_salt VARCHAR(512),
         pwd_hash VARCHAR(512)
     )""")
-    cur.execute("""CREATE TABLE if not exists UrlData (
+    cur.executescript("""CREATE TABLE if not exists UrlData (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url_domain VARCHAR(255),
         url_key VARCHAR(16),
         target VARCHAR(512),
         user_id INT,
         expiration DATETIME
     )""")
-
-def convert_db_user_to_model(user: tp.Dict[str, tp.Any]):
-    """Do the necessary name conversion to values from db and return a model"""
-    user['uid'] = user.pop('id')
-    return User(**user)
-
-def get_user(
-    name: tp.Optional[str] = None,
-    email: tp.Optional[str] = None,
-    uid: tp.Optional[int] = None
-    ):
-    """Get a specific user from db"""
-    cur = DB_CON.cursor()
-    data = None
-    target_attr = None
-    error_msg = "No user name, email or id was provided"
-    if name is not None:
-        target_attr = "name"
-        data = name
-        error_msg = f"No user named '{name}'"
-    elif email is not None:
-        target_attr = "email"
-        data = email
-        error_msg = f"No user registered with email '{email}'"
-    elif uid is not None:
-        target_attr = "id"
-        data = uid
-        error_msg = f"No user with uid {uid}"
-    else:
-        raise ValueError(error_msg)
-    cur.execute(f"SELECT * FROM UsersData WHERE {target_attr} = ?", (data,))
-    values = cur.fetchone()
-    return convert_db_user_to_model(values)
-
-URL_KEY_PATTERN = re.compile(r"[A-z0-9]+\.[A-z0-9]{2,}-[A-z0-9]+")
-
-# This should be paginated for a prod service
-def get_users() -> tp.Tuple[User]:
-    """Get all users from db"""
-    cur = DB_CON.cursor()
-    q = cur.execute(f"SELECT * FROM UsersData")
-    return tuple(convert_db_user_to_model(values) for values in cur.fetchall())
-
-def add_user(
-    email: str,
-    name: tp.Optional[str] = None,
-    passwd: tp.Optional[str] = None,
-) -> User:
-    """Add a new user"""
-    cur = DB_CON.cursor()
-    cur.execute("SELECT * FROM UsersData WHERE email = ?", (email,))
-    if cur.fetchone() is not None:
-        raise ValueError("Email already registered")
-    cur.execute(
-        "INSERT INTO UsersData(email,name) VALUES(?, ?) RETURNING *",
-        (email, name)
-    )
-    values = cur.fetchone()
-    if values is None:
-        raise RuntimeError("Fail to add new user")
-    return convert_db_user_to_model(values)
-
-def convert_db_url_to_model(data: tp.Dict[str, tp.Any]):
-    """Do the necessary name conversion to values from db and return a model"""
-    data['url_id'] = data.pop('id')
-    return ShortUrl(**data)
-
-def get_url_metadata(key: str) -> ShortUrl:
-    """Get a specific url metadata"""
-    cur = DB_CON.cursor()
-    cur.execute("SELECT * FROM UrlData WHERE url_key = ?", (key,))
-    values = cur.fetchone()
-    if values is None:
-        raise KeyError(f"No url for key '{key}'")
-    return convert_db_url_to_model(values)
-
-def get_available_key() -> tp.Optional[ShortUrl]:
-    """Get an available key from db"""
-    cur = DB_CON.cursor()
-    cur.execute("SELECT * FROM UrlData WHERE expiration < NOW() OR target = ''")
-    values = cur.fetchone()
-    if values is not None:
-        values = convert_db_url_to_model(values)
-    return values
-
-def 
+    cur.close()
+    con.close()

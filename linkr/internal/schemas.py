@@ -12,6 +12,7 @@ class User(BaseModel):
 
 class ShortUrl(BaseModel):
     url_id: int
+    url_domain: str
     url_key: str
     target: str
     user_id: tp.Optional[int]

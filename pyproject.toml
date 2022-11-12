@@ -8,10 +8,12 @@ authors = ["LOUBIERE Quentin <map@synidion.fr>"]
 [tool.poetry.dependencies]
 python = "^3.8"
 fastapi = "^0.86.0"
-pytest = "^7.2.0"
+aiosqlite = "^0.17.0"
 
 [tool.poetry.dev-dependencies]
 uvicorn = "^0.19.0"
+pytest = "^7.2.0"
+pytest-asyncio = "^0.20.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

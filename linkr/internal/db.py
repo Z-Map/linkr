@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import re
 import sqlite3
 import typing as tp
@@ -132,7 +133,7 @@ class MasterDatabase():
         """Get an available key from db"""
         db = await self.connection()
         async with db.execute(
-            "SELECT * FROM UrlData WHERE expiration < NOW() OR target = ''"
+            "SELECT * FROM UrlData WHERE expiration < DATETIME('now') OR target = ''"
         ) as cur:
             values = await cur.fetchone()
             if values is not None:
@@ -149,6 +150,50 @@ class MasterDatabase():
                 self.convert_db_url_to_model(values)
                 for values in await cur.fetchall()
             ]
+
+    async def get_user_urls(self,
+        uid: tp.Optional[int] = None,
+        email: tp.Optional[str] = None
+    ) -> tp.List[ShortUrl]:
+        """Get a list of used url's metadata for a specific user"""
+        db = await self.connection()
+        if email is not None:
+            try:
+                usr = await self.get_user(email=email)
+                uid = usr.uid
+            except ValueError:
+                return None
+        async with db.execute(
+            "SELECT * FROM UrlData WHERE user_id = ?", (uid,)
+        ) as cur:
+            return [
+                self.convert_db_url_to_model(values)
+                for values in await cur.fetchall()
+            ]
+
+    async def add_url(self,
+        email: str,
+        target: str,
+        url_domain: str,
+        url_key: str,
+
+    ) -> User:
+        """Add a new user"""
+        db = await self.connection()
+        try:
+            usr = await self.get_user(email=email)
+        except ValueError:
+            usr = self.add_user(email)
+        async with await db.execute(
+            "INSERT INTO UrlData(url_domain, url_key, target, user_id,"
+            "expiration) VALUES(?, ?, ?, ?, ?) RETURNING *", (
+            url_domain, url_key, target, usr.uid,
+            datetime.datetime.now() + datetime.timedelta(days=7)
+        )) as cur:
+            values = await cur.fetchone()
+        if values is None:
+            raise RuntimeError("Fail to add url")
+        return self.convert_db_url_to_model(values)
 
 # This should be ran outside of this module, during deployement.
 def init_db(name: str):

@@ -16,5 +16,5 @@ class ShortUrl(BaseModel):
     url_key: str
     target: str
     user_id: tp.Optional[int]
-    expiration: datetime.datetime
+    expiration: tp.Optional[datetime.datetime]
 

@@ -4,15 +4,14 @@ class TextInput  extends React.Component {
   constructor(props) {
     super(props);
     this.changeValue = this.changeValue.bind(this);
-    this.state = {text_value: props.value}
   }
 
   changeValue (e) {
-    this.setState({text_value: e.target.value});
+    this.props.onChange(e.target.value);
   }
   
   render() {
-    const text_value = this.state.text_value;
+    const text_value = this.props.value;
     const inp_type = this.props.type || 'text';
     const title = this.props.title;
     return <fieldset>
@@ -26,10 +25,20 @@ class UrlCreator extends React.Component {
   constructor(props) {
       super(props);
       this.createUrl = this.createUrl.bind(this);
+      this.onTargetChange = this.onTargetChange.bind(this);
+      this.onEmailChange = this.onEmailChange.bind(this);
       this.state = {
           target_url: '',
           email_address: props.email
       };
+  }
+
+  onTargetChange(text){
+    this.setState({target_url: text});
+  }
+
+  onEmailChange(text){
+    this.setState({target_url: text});
   }
 
   createUrl (e) {

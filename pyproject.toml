@@ -9,6 +9,7 @@ authors = ["LOUBIERE Quentin <map@synidion.fr>"]
 python = "^3.8"
 fastapi = "^0.86.0"
 aiosqlite = "^0.17.0"
+python-multipart = "^0.0.5"
 
 [tool.poetry.dev-dependencies]
 uvicorn = "^0.19.0"

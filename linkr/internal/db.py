@@ -45,6 +45,8 @@ class MasterDatabase():
         if self.con is not None:
             await self.con.close()
         self.con = None
+        MasterDatabase._db_instance = None
+        del self
 
     # User related method
     def convert_db_user_to_model(self, user: tp.Dict[str, tp.Any]):
@@ -81,7 +83,7 @@ class MasterDatabase():
         ) as cur:
             values = await cur.fetchone()
         if values is None:
-            return ValueError(error_msg)
+            raise ValueError(error_msg)
         return self.convert_db_user_to_model(values)
 
     # This should be paginated for a prod service
@@ -146,10 +148,19 @@ class MasterDatabase():
         async with db.execute(
             "SELECT * FROM UrlData WHERE target != ''"
         ) as cur:
-            return [
+            res = [
                 self.convert_db_url_to_model(values)
                 for values in await cur.fetchall()
             ]
+            print(res)
+        return res
+
+    async def get_new_url_index(self) -> int:
+        """Return UrlData entries count"""
+        db = await self.connection()
+        async with db.execute("SELECT COUNT(*) FROM UrlData") as cur:
+            result = await cur.fetchone()
+        return result["COUNT(*)"]
 
     async def get_user_urls(self,
         uid: tp.Optional[int] = None,
@@ -183,7 +194,7 @@ class MasterDatabase():
         try:
             usr = await self.get_user(email=email)
         except ValueError:
-            usr = self.add_user(email)
+            usr = await self.add_user(email)
         async with await db.execute(
             "INSERT INTO UrlData(url_domain, url_key, target, user_id,"
             "expiration) VALUES(?, ?, ?, ?, ?) RETURNING *", (

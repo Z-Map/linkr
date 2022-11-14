@@ -68,5 +68,7 @@ async def test_add_url(dbo):
 
 async def test_get_user_url(dbo):
     urls = await dbo.get_user_urls(email=TEST_USER.email)
-    print(urls)
     assert urls
+
+async def test_get_user_url(dbo):
+    assert await dbo.get_new_url_index() == 1

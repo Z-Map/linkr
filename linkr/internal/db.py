@@ -43,10 +43,12 @@ class MasterDatabase():
     async def close(self):
         """Close the connection"""
         if self.con is not None:
+            await self.con.commit()
             await self.con.close()
+            self.con.join(timeout=1)
+            if self.con.is_alive():
+                raise RuntimeError("Unable to close connection")
         self.con = None
-        MasterDatabase._db_instance = None
-        del self
 
     # User related method
     def convert_db_user_to_model(self, user: tp.Dict[str, tp.Any]):
@@ -109,6 +111,7 @@ class MasterDatabase():
             "INSERT INTO UsersData(email,name) VALUES(?, ?) RETURNING *",
             (email, name)) as cur:
             values = await cur.fetchone()
+        await db.commit()
         if values is None:
             raise RuntimeError("Fail to add new user")
         return self.convert_db_user_to_model(values)
@@ -202,6 +205,7 @@ class MasterDatabase():
             datetime.datetime.now() + datetime.timedelta(days=7)
         )) as cur:
             values = await cur.fetchone()
+        await db.commit()
         if values is None:
             raise RuntimeError("Fail to add url")
         return self.convert_db_url_to_model(values)

@@ -23,3 +23,9 @@ You can install the project using the following command (you need poetry tool) :
 ```zsh
 poetry install
 ```
+
+You can run both services :
+```zsh
+poetry run uvicorn linkr.server:app
+poetry run uvicorn linkr.redirecter:app
+```

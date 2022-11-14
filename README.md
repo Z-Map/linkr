@@ -27,5 +27,5 @@ poetry install
 You can run both services :
 ```zsh
 poetry run uvicorn linkr.server:app
-poetry run uvicorn linkr.redirecter:app
+poetry run uvicorn --port 9090 linkr.redirecter:app
 ```

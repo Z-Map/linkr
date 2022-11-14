@@ -103,11 +103,11 @@ class MasterDatabase():
     ) -> User:
         """Add a new user"""
         db = await self.connection()
-        async with await db.execute(
+        async with db.execute(
             "SELECT * FROM UsersData WHERE email = ?", (email,)) as cur:
             if await cur.fetchone():
                 raise ValueError("Email already registered")
-        async with await db.execute(
+        async with db.execute(
             "INSERT INTO UsersData(email,name) VALUES(?, ?) RETURNING *",
             (email, name)) as cur:
             values = await cur.fetchone()
@@ -198,7 +198,7 @@ class MasterDatabase():
             usr = await self.get_user(email=email)
         except ValueError:
             usr = await self.add_user(email)
-        async with await db.execute(
+        async with db.execute(
             "INSERT INTO UrlData(url_domain, url_key, target, user_id,"
             "expiration) VALUES(?, ?, ?, ?, ?) RETURNING *", (
             url_domain, url_key, target, usr.uid,
